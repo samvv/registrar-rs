@@ -8,30 +8,57 @@ pub mod io_result_ext;
 use log::error;
 use reqwest::Method;
 use serde::{Serialize, Deserialize};
-use serde_json::{Value, json};
+use serde_json::{Value, json, error::Category};
 use json::ValueExt;
 
 const DEFAULT_REFRESH_TIMEOUT: u64 = 1;
 const DEFAULT_MAX_RETRIES: u32 = 5;
 
-pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
-
 #[derive(Debug)]
 pub enum Error {
     AuthenticationFailed,
     UnknownRemoteError(u64),
+    Io(std::io::Error),
+    Json(String),
+    Other(String),
 }
 
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::AuthenticationFailed => write!(f, "invalid username/password"),
-            Self::UnknownRemoteError(code) => write!(f, "server responded with an unrecognised error code {}", code),
+            Self::AuthenticationFailed => write!(f, "OpenProvider did not accept the current authentication"),
+            Self::UnknownRemoteError(code) => write!(f, "an unrecognised error code {} was returned while contacting OpenProvider", code),
+            Self::Io(error) => write!(f, "input/output error: {}", error),
+            Self::Json(message) => f.write_str(message),
+            Self::Other(message) => f.write_str(message),
         }
     }
 }
 
 impl std::error::Error for Error {}
+
+impl From<serde_json::Error> for Error {
+    fn from(error: serde_json::Error) -> Self {
+        match error.classify() {
+            Category::Io => Error::Io(error.into()),
+            Category::Eof | Category::Data | Category::Syntax => Error::Json(error.to_string()),
+        }
+    }
+}
+
+impl From<json::Error> for Error {
+    fn from(error: json::Error) -> Self {
+        Error::Json(error.to_string())
+    }
+}
+
+impl From<reqwest::Error> for Error {
+    fn from(error: reqwest::Error) -> Self {
+        Error::Other(error.to_string())
+    }
+}
+
+pub type Result<T> = std::result::Result<T, Error>;
 
 struct Config {
     token: Option<String>,
@@ -176,40 +203,30 @@ impl Client {
 
     async fn request<U: AsRef<str>>(&mut self, method: Method, url: U, body: Option<Value>) -> Result<Value> {
         let url_ref = url.as_ref();
-        let mut retry_count = 0;
         log::info!("Starting request to {}", url_ref);
-        loop {
-            let mut builder = self.client
-                .request(method.clone(), url_ref)
-                .header("Accept", "*/*");
-            let body = body.clone();
-            if body.is_some() {
-                builder = builder.json(&body.unwrap());
-            }
-            if self.token.is_some() {
-                builder = builder.header("Authorization", format!("Bearer {}", self.token.clone().unwrap()));
-            }
-            let response: Value = builder
-                .send().await?
-                .json().await?;
-            let code = response
-                .get_ok("code")?
-                .as_u64_ok()?;
-            if code == CODE_SUCCESS {
-                let data = response.get_ok("data")?;
-                return Ok(data.clone())
-            }
-            error!("Request to OpenProvider failed with the following error: {}", response);
-            match code {
-                CODE_AUTH_FAILED => return Err(Box::new(Error::AuthenticationFailed)),
-                _ => {
-                    retry_count += 1;
-                    if retry_count == self.max_retries {
-                        return Err(Box::new(Error::UnknownRemoteError (code)));
-                    }
-                }
-            }
-            tokio::time::sleep(std::time::Duration::from_millis(5000)).await;
+        let mut builder = self.client
+            .request(method.clone(), url_ref)
+            .header("Accept", "*/*");
+        let body = body.clone();
+        if body.is_some() {
+            builder = builder.json(&body.unwrap());
+        }
+        if self.token.is_some() {
+            builder = builder.header("Authorization", format!("Bearer {}", self.token.clone().unwrap()));
+        }
+        let response: Value = builder
+            .send().await?
+            .json().await?;
+        let code = response
+            .get_ok("code")?
+            .as_u64_ok()?;
+        if code == CODE_SUCCESS {
+            let data = response.get_ok("data")?;
+            return Ok(data.clone())
+        }
+        match code {
+            CODE_AUTH_FAILED => Err(Error::AuthenticationFailed),
+            _ => Err(Error::UnknownRemoteError(code)),
         }
     }
 
@@ -235,22 +252,6 @@ impl Client {
             None
         ).await?;
         Ok(serde_json::from_value::<Zone>(response)?)
-    }
-
-    pub async fn list_records<S: AsRef<str>>(&mut self, domain: S) -> Result<Vec<Record>> {
-        let domain_ref = domain.as_ref();
-        let res = self.request(
-            Method::GET,
-            format!("https://api.openprovider.eu/v1beta/dns/zones/{}", domain_ref),
-            Some(
-                serde_json::json!({
-                    "name": domain_ref,
-                    "with_records": true
-                })
-            )
-        ).await?;
-        eprintln!("{}", res);
-        Ok(vec![])
     }
 
     pub async fn set_record<S: AsRef<str>>(&mut self, name: S, orig_record: Record, new_record: Record) -> Result<()> {

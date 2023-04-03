@@ -1,6 +1,6 @@
 
 use std::env::VarError;
-use std::fmt::{Display, Debug};
+use std::fmt::Debug;
 use std::fs::Permissions;
 use std::os::unix::fs::PermissionsExt;
 
@@ -31,7 +31,7 @@ fn get_env_string<S: AsRef<str>>(name: S) -> Option<String> {
     }
 }
 
-fn output<T: Debug + ?Sized + Serialize>(value: &T, format: Format) {
+fn print<T: Debug + ?Sized + Serialize>(value: &T, format: Format) {
     match format {
         Format::JSON => println!("{}", serde_json::to_string_pretty(value).unwrap()),
         Format::HumanReadable => println!("{:#?}", value),
@@ -41,6 +41,24 @@ fn output<T: Debug + ?Sized + Serialize>(value: &T, format: Format) {
 enum Format {
     HumanReadable,
     JSON,
+}
+
+trait ResultExt<T> {
+    fn unwrap_print(self) -> T;
+}
+
+impl <T, E: std::error::Error> ResultExt<T> for std::result::Result<T, E> {
+
+    fn unwrap_print(self) -> T {
+        match self {
+            Ok(value) => value,
+            Err(error) => {
+                println!("Error: {}", error);
+                std::process::exit(1);
+            },
+        }
+    }
+
 }
 
 #[tokio::main]
@@ -126,8 +144,7 @@ async fn main() -> Result<()> {
 
     if matches.get_flag("json") {
         output_format = Format::JSON;
-    }
-    if matches.get_flag("human") {
+    } else if matches.get_flag("human") {
         output_format = Format::HumanReadable;
     }
 
@@ -141,31 +158,27 @@ async fn main() -> Result<()> {
             let username = matches.get_one::<String>("username").unwrap();
             let password = matches.get_one::<String>("password").unwrap();
             let save = matches.get_flag("save");
-            match client.login(username, password).await {
-                Ok(token) => {
-                    println!("Authentication successful!");
-                    if save {
-                        std::fs::create_dir_all(config_dir)?;
-                        let writer = std::fs::File::create(&credentials_file)?;
-                        serde_json::to_writer_pretty(writer, &Credentials {
-                            username: username.to_string(),
-                            password: password.to_string(),
-                            token: Some(token),
-                        })?;
-                        std::fs::set_permissions(&credentials_file, Permissions::from_mode(0o600))?;
-                        println!("Credentials written to {:?}", credentials_file);
-                    }
-                },
-                Err(why) => eprintln!("Authentication failed: {}", why)
+            let token = client.login(username, password).await.unwrap_print();
+            println!("Authentication successful!");
+            if save {
+                std::fs::create_dir_all(config_dir)?;
+                let writer = std::fs::File::create(&credentials_file)?;
+                serde_json::to_writer_pretty(writer, &Credentials {
+                    username: username.to_string(),
+                    password: password.to_string(),
+                    token: Some(token),
+                })?;
+                std::fs::set_permissions(&credentials_file, Permissions::from_mode(0o600))?;
+                println!("Credentials written to {:?}", credentials_file);
             }
         },
         Some(("zone", matches)) => match matches.subcommand() {
             Some(("list", _)) => {
-                eprintln!("{:#?}", client.list_zones().await.unwrap());
+                eprintln!("{:#?}", client.list_zones().await.unwrap_print());
             },
             Some(("info", matches)) => {
                 let name = matches.get_one::<String>("name").unwrap();
-                output(&client.get_zone(name, false).await.unwrap(), output_format);
+                print(&client.get_zone(name, false).await.unwrap_print(), output_format);
             },
             None => eprintln!("Please provide a subcommand."),
             _ => eprintln!("Unrecognised subcommand. Please check your spelling."),
@@ -173,7 +186,7 @@ async fn main() -> Result<()> {
         Some(("record", matches)) => match matches.subcommand() {
             Some(("list", matches)) => {
                 let name = matches.get_one::<String>("name").unwrap();
-                output(&client.get_zone(name, true).await.unwrap().records.unwrap(), output_format);
+                print(&client.get_zone(name, true).await.unwrap_print().records.unwrap(), output_format);
             },
             Some(("set", _matches)) => unimplemented!(),
             None => eprintln!("Please provide a subcommand."),

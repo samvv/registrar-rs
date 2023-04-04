@@ -1,8 +1,20 @@
+//!
+//! [OpenProvider](https://openprovider.com) is a domain registrar based in the Netherlands.
+//! The service features a public API that anyone can make use of.
+//!
+//! This crate implements a subset of that API in Rust. With it, you can query, filter and
+//! manipulate DNS records.
+//!
+//! Unforunately, this crate is not complete yet. Many more APIs, such as SSL certificates, have
+//! yet to be implemented. You are invited to try out the API and contribute to the project [back
+//! on GitHub](https://github.com/samvv/openprovider-rs).
 
+#[doc(hidden)]
 pub mod json;
 
 #[cfg_attr(feature = "io_error_more", feature("io_error_more"))]
 
+#[doc(hidden)]
 pub mod io_result_ext;
 
 use reqwest::Method;
@@ -14,10 +26,22 @@ const DEFAULT_MAX_RETRIES: u32 = 5;
 
 #[derive(Debug)]
 pub enum Error {
+    /// Indicates that authentication with the OpenProvider API failed, either because of an
+    /// invalid username/password combination or a token that expired.
     AuthenticationFailed,
+    /// There was some communication with the OpenProvider API but it returned an error code that is
+    /// not understood by this library. The code and the message are saved inside the tuple
+    /// elements.
     UnknownRemoteError(u64, String),
+    /// Any kind of IO error.
+    ///
+    /// Currently, errors in the network communication are stored in [`Other`](Self::Other) instead of this field.
+    /// This is due to an incompatibility with the underlying HTTP library and will be fixed in the
+    /// future.
     Io(std::io::Error),
+    /// Data sent or received from OpenProvider did not meet the schema of this library.
     Json(String),
+    /// Any other error stored as a human-readable error message.
     Other(String),
 }
 
@@ -56,6 +80,24 @@ impl From<reqwest::Error> for Error {
     }
 }
 
+/// Represents the category of all computations that may fail in this library.
+///
+/// ```no_run
+/// use openprovider::Error;
+///
+/// let mut client = openprovider::Client::default();
+///
+/// loop {
+///     match client.get_zone("example.com").await {
+///         Ok(info) => break info,
+///         Err(Error::AuthenticationFailed) => {
+///             let token = client.login("bob", "123456789").await?;
+///             client.set_token(token);
+///         },
+///         Err(error) => panic!("Failed to fetch DNS zone info: {}", error),
+///     }
+/// }
+/// ```
 pub type Result<T> = std::result::Result<T, Error>;
 
 struct Config {
@@ -63,12 +105,21 @@ struct Config {
     max_retries: u32,
 }
 
+/// Constructs an [API client](Client).
+///
+/// Right now, this builder does not accept any options, but more may be added in the future.
+///
+/// ```no_run
+/// let mut client = openprovider::Builder::new().build();
+/// // use the client to make requests
+/// ```
 pub struct Builder {
     config: Config,
 }
 
 impl Builder {
 
+    /// Create a new API client builder object.
     pub fn new() -> Self {
         Self {
             config: Config {
@@ -78,37 +129,36 @@ impl Builder {
         }
     }
 
+    /// Make sure the client to be built is configured to use this token.
     pub fn token(mut self, token: Option<String>) -> Self {
         self.config.token = token;
         self
     }
 
+    /// Limit the amount of HTTP request retries to the given number.
     pub fn max_retries(mut self, max_retries: u32) -> Self {
         self.config.max_retries = max_retries;
         self
     }
 
+    /// Allow as many HTTP request retries as needed in the API client.
     pub fn no_max_retries(mut self) -> Self {
         self.config.max_retries = 0;
         self
     }
 
-    pub fn build(&self) -> Client {
+    /// Build the actual API client. This is a destructive operation.
+    pub fn build(self) -> Client {
         Client {
             client: reqwest::Client::new(),
-            token: self.config.token.clone(),
+            token: self.config.token,
             max_retries: self.config.max_retries,
         }
     }
 
 }
 
-pub struct Client {
-    client: reqwest::Client,
-    token: Option<String>,
-    max_retries: u32,
-}
-
+/// Represents a DNS record type, such as an A record or MX record.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum RecordType {
     A,
@@ -125,6 +175,7 @@ pub enum RecordType {
     SOA,
 }
 
+/// Represents a DNS record.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Record {
     pub creation_date: Option<String>,
@@ -138,6 +189,7 @@ pub struct Record {
     pub value: String,
 }
 
+/// Represents additional data about premium Sectigo DNS services for a [DNS zone](Zone).
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SectigoData {
     pub autorenew: bool,
@@ -147,11 +199,13 @@ pub struct SectigoData {
     pub website_id: u64,
 }
 
+/// Represents additional data about premium DNS services for a [DNS zone](Zone).
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum PremiumDnsData {
     Sectigo(SectigoData),
 }
 
+/// Represents the DNS configuration of a single domain.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Zone {
     pub active: bool,
@@ -177,8 +231,43 @@ const CODE_SUCCESS: u64 = 0;
 /// The error code the OpenProvider API returns whenever there is an authentication failure.
 const CODE_AUTH_FAILED: u64 = 196;
 
+/// Communiates with the OpenProvider.nl API.
+///
+/// ```no_run
+/// let mut client = openprovider::Client::default();
+/// let token = client.login("bob", "123456789").await?;
+/// client.set_token(token);
+/// ```
+///
+pub struct Client {
+    client: reqwest::Client,
+    token: Option<String>,
+    max_retries: u32,
+}
+
+impl Default for Client {
+    fn default() -> Self {
+        Self {
+            client: reqwest::Client::new(),
+            token: None,
+            max_retries: DEFAULT_MAX_RETRIES
+        }
+    }
+}
+
 impl Client {
 
+    /// Authenticate with the OpenProvider API and receive a fresh token.
+    ///
+    /// Use [`set_token`](Self::set_token()) to assign the token to the client that should use it.
+    ///
+    /// ```no_run
+    /// let mut client = openprovider::Client::default();
+    ///
+    /// let token = client.login("bob", "123456789").await?;
+    ///
+    /// client.set_token(token);
+    /// ```
     pub async fn login<S1: AsRef<str>, S2: AsRef<str>>(&mut self, username: S1, password: S2) -> Result<String> {
         let res = self.request(
             Method::POST,
@@ -191,14 +280,30 @@ impl Client {
         Ok(res.get_ok("token")?.as_str_ok()?.to_string())
     }
 
+    /// Get the current token used for authorization, if any.
     pub fn get_token(&self) -> Option<&String> {
         self.token.as_ref()
     }
 
+    /// Return `true` if a token is present and ready to be used for authorization; `false`
+    /// otherwise.
     pub fn has_token(&self) -> bool {
         self.token.is_some()
     }
 
+    //// Set the token that will be used to authenticate.
+    ///
+    /// Use [`login`](Self::login()) to obtain a token from a combination of a username and password.
+    ///
+    /// ```no_run
+    /// let mut client = openprovider::Client::default();
+    ///
+    /// match std::env::var("OPENPROVIDER_TOKEN") {
+    ///     Ok(token) => client.set_token(token),
+    ///     Err(_) => {},
+    /// }
+    ///
+    /// ```
     pub fn set_token<S: Into<String>>(&mut self, token: S) {
         self.token = Some(token.into());
     }
@@ -232,6 +337,19 @@ impl Client {
         }
     }
 
+    /// List all known DNS zones for this particular authenticated user.
+    ///
+    /// ```no_run
+    /// let mut client = openprovider::Client::default();
+    ///
+    /// // ...
+    ///
+    /// let zones = client
+    ///     .list_zones()
+    ///     .await?
+    ///     .iter()
+    ///     .filter(|z| !z.is_deleted);
+    /// ```
     pub async fn list_zones(&mut self) -> Result<Vec<Zone>> {
         let response = self.request(
             Method::GET,
@@ -247,7 +365,7 @@ impl Client {
         Ok(zones?)
     }
 
-    pub async fn get_zone_internal<S: AsRef<str>>(&mut self, name: S, with_records: bool) -> Result<Zone> {
+    async fn get_zone_internal<S: AsRef<str>>(&mut self, name: S, with_records: bool) -> Result<Zone> {
         let response = self.request(
             Method::GET,
             format!("https://api.openprovider.eu/v1beta/dns/zones/{}?with_records={}", name.as_ref(), if with_records { "true" } else { "false" }),
@@ -256,10 +374,35 @@ impl Client {
         Ok(serde_json::from_value::<Zone>(response)?)
     }
 
+    /// Get more information about a specific DNS zone.
+    ///
+    /// ```no_run
+    /// let client = openprovider::Client::default();
+    ///
+    /// let info = client.get_zone("example.com").await?;
+    ///
+    /// eprintln!("Zone created on {}", info.creation_date);
+    /// eprintln!("Zone modified on {}", info.modification_date);
+    /// ```
     pub async fn get_zone<S: AsRef<str>>(&mut self, name: S) -> Result<Zone> {
         self.get_zone_internal(name, false).await
     }
 
+    /// List all records that belong to the provided DNS zone.
+    ///
+    /// ```no_run
+    /// use openprovider::RecordType;
+    ///
+    /// let client = openprovider::Client::default();
+    ///
+    /// let records = client.list_records("example.com").await?;
+    ///
+    /// for record in records {
+    ///     if record.name == "wiki" && record.ty == RecordType::A {
+    ///         eprintln!("Found our wiki A-record pointing to {}", record.value);
+    ///     }
+    /// }
+    /// ```
     pub async fn list_records<S: AsRef<str>>(&mut self, name: S) -> Result<Vec<Record>> {
         let name_ref = name.as_ref();
         let records = self.get_zone_internal(name_ref, true)
@@ -286,6 +429,27 @@ impl Client {
         Ok(records)
     }
 
+    /// Update a given DNS record with new attributes.
+    ///
+    /// Due to the way the OpenProvider API works, you must supply the old DNS record as well.
+    /// You can do this by using [`list_zones`](Self::list_zones()) and filtering on the DNS record that you want to
+    /// change.
+    ///
+    /// ```
+    /// use openprovider::RecordType;
+    ///
+    /// let record = client.list_record("example.com")
+    ///     .await?
+    ///     .iter()
+    ///     .filter(|r| r.name === "wiki" && r.ty == RecordType::A)
+    ///     .first()
+    ///     .expect("A record for wiki.example.com not found");
+    /// 
+    /// let mut new_record = record.clone();
+    /// new_record.value = "93.184.216.34".to_string();
+    ///
+    /// client.set_record("example.com", record, new_record)
+    /// ```
     pub async fn set_record<S: AsRef<str>>(&mut self, name: S, orig_record: &Record, new_record: &Record) -> Result<()> {
         let name_ref = name.as_ref();
         self.request(

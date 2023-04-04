@@ -2,6 +2,16 @@
 name = "openprovider"
 version = "0.1.0"
 edition = "2021"
+license = "MIT"
+description = "API client for OpenProvider.nl"
+homepage = "https://github.com/samvv/openprovider-rs"
+repository = "https://github.com/samvv/openprovider-rs"
+readme = "README.md"
+keywords = [ "api", "http", "dns" ]
+categories = [ "web-programming::http-client", "network-programming" ]
+
+[lib]
+doctest = false
 
 [dependencies]
 log = "0.4"

@@ -1,16 +1,5 @@
-[package]
-name = "openprovider"
-version = "0.1.0"
-edition = "2021"
-
-[dependencies]
-log = "0.4"
-env_logger = "0.10"
-reqwest = { version = "0.11", features = ["blocking", "json"] }
-tokio = { version = "1", features = ["full"] }
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-dirs = "5.0.0"
-anyhow = "1.0" # for binary only
-clap = { version = "4.2", features = ["cargo"] } # for binary only
-toml = "0.7" # for binary only
+[workspace]
+members = [
+  "crates/openprovider",
+  "crates/openprovider-cli"
+]

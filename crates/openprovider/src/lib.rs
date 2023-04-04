@@ -5,19 +5,17 @@ pub mod json;
 
 pub mod io_result_ext;
 
-use log::error;
 use reqwest::Method;
 use serde::{Serialize, Deserialize};
 use serde_json::{Value, json, error::Category};
 use json::ValueExt;
 
-const DEFAULT_REFRESH_TIMEOUT: u64 = 1;
 const DEFAULT_MAX_RETRIES: u32 = 5;
 
 #[derive(Debug)]
 pub enum Error {
     AuthenticationFailed,
-    UnknownRemoteError(u64),
+    UnknownRemoteError(u64, String),
     Io(std::io::Error),
     Json(String),
     Other(String),
@@ -27,7 +25,7 @@ impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::AuthenticationFailed => write!(f, "OpenProvider did not accept the current authentication"),
-            Self::UnknownRemoteError(code) => write!(f, "an unrecognised error code {} was returned while contacting OpenProvider", code),
+            Self::UnknownRemoteError(code, desc) => write!(f, "OpenProvider returned with error {}: {}", code, desc),
             Self::Io(error) => write!(f, "input/output error: {}", error),
             Self::Json(message) => f.write_str(message),
             Self::Other(message) => f.write_str(message),
@@ -111,7 +109,7 @@ pub struct Client {
     max_retries: u32,
 }
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum RecordType {
     A,
     AAAA,
@@ -127,7 +125,7 @@ pub enum RecordType {
     SOA,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Record {
     pub creation_date: Option<String>,
     pub ip: Option<String>,
@@ -140,7 +138,7 @@ pub struct Record {
     pub value: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SectigoData {
     pub autorenew: bool,
     pub order_date: String,
@@ -149,12 +147,12 @@ pub struct SectigoData {
     pub website_id: u64,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum PremiumDnsData {
     Sectigo(SectigoData),
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Zone {
     pub active: bool,
     pub creation_date: String,
@@ -197,6 +195,10 @@ impl Client {
         self.token.as_ref()
     }
 
+    pub fn has_token(&self) -> bool {
+        self.token.is_some()
+    }
+
     pub fn set_token<S: Into<String>>(&mut self, token: S) {
         self.token = Some(token.into());
     }
@@ -226,7 +228,7 @@ impl Client {
         }
         match code {
             CODE_AUTH_FAILED => Err(Error::AuthenticationFailed),
-            _ => Err(Error::UnknownRemoteError(code)),
+            _ => Err(Error::UnknownRemoteError(code, response.get_ok("desc")?.to_string())),
         }
     }
 
@@ -245,7 +247,7 @@ impl Client {
         Ok(zones?)
     }
 
-    pub async fn get_zone<S: AsRef<str>>(&mut self, name: S, with_records: bool) -> Result<Zone> {
+    pub async fn get_zone_internal<S: AsRef<str>>(&mut self, name: S, with_records: bool) -> Result<Zone> {
         let response = self.request(
             Method::GET,
             format!("https://api.openprovider.eu/v1beta/dns/zones/{}?with_records={}", name.as_ref(), if with_records { "true" } else { "false" }),
@@ -254,7 +256,37 @@ impl Client {
         Ok(serde_json::from_value::<Zone>(response)?)
     }
 
-    pub async fn set_record<S: AsRef<str>>(&mut self, name: S, orig_record: Record, new_record: Record) -> Result<()> {
+    pub async fn get_zone<S: AsRef<str>>(&mut self, name: S) -> Result<Zone> {
+        self.get_zone_internal(name, false).await
+    }
+
+    pub async fn list_records<S: AsRef<str>>(&mut self, name: S) -> Result<Vec<Record>> {
+        let name_ref = name.as_ref();
+        let records = self.get_zone_internal(name_ref, true)
+            .await?
+            .records
+            .unwrap()
+            .iter_mut()
+            .map(|r| Record {
+                creation_date: r.creation_date.clone(),
+                ip: r.ip.clone(),
+                modification_date: r.modification_date.clone(),
+                name:
+                    if r.name.len() == name_ref.len() {
+                        r.name.clone()
+                    } else {
+                        r.name.chars().take(r.name.len() - name_ref.len() - 1).collect()
+                    },
+                prio: r.prio,
+                ttl: r.ttl,
+                ty: r.ty.clone(),
+                value: r.value.clone(),
+            })
+            .collect();
+        Ok(records)
+    }
+
+    pub async fn set_record<S: AsRef<str>>(&mut self, name: S, orig_record: &Record, new_record: &Record) -> Result<()> {
         let name_ref = name.as_ref();
         self.request(
             Method::PUT,

@@ -178,7 +178,7 @@ async fn main() -> Result<()> {
             },
             Some(("info", matches)) => {
                 let name = matches.get_one::<String>("name").unwrap();
-                print(&client.get_zone(name, false).await.unwrap_print(), output_format);
+                print(&client.get_zone(name).await.unwrap_print(), output_format);
             },
             None => eprintln!("Please provide a subcommand."),
             _ => eprintln!("Unrecognised subcommand. Please check your spelling."),
@@ -186,7 +186,7 @@ async fn main() -> Result<()> {
         Some(("record", matches)) => match matches.subcommand() {
             Some(("list", matches)) => {
                 let name = matches.get_one::<String>("name").unwrap();
-                print(&client.get_zone(name, true).await.unwrap_print().records.unwrap(), output_format);
+                print(&client.list_records(name).await.unwrap_print(), output_format);
             },
             Some(("set", _matches)) => unimplemented!(),
             None => eprintln!("Please provide a subcommand."),

@@ -1,6 +1,8 @@
 OpenProvider.nl in Rust
 =======================
 
+[![tests](https://github.com/samvv/openprovider-rs/actions/workflows/rust.yml/badge.svg)](https://github.com/samvv/openprovider-rs/actions/workflows/rust.yml)
+
 This is an implementation of a spec-compliant HTTP-based API client for the
 OpenProvider.nl domain reseller.
 

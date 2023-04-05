@@ -1,4 +1,4 @@
-[![docs.rs](https://img.shields.io/docsrs/openprovider/latest?style=flat-square)](https://docs.rs/openprovider)
+[![docs.rs](https://img.shields.io/docsrs/openprovider)](https://docs.rs/openprovider)
 
 [OpenProvider](https://openprovider.com) is a domain registrar based in the Netherlands.
 The service features a public API that anyone can make use of.

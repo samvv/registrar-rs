@@ -3,3 +3,4 @@ members = [
   "crates/openprovider",
   "crates/openprovider-cli"
 ]
+resolver = "2"

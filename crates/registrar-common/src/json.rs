@@ -1,5 +1,6 @@
 
-use serde_json::{Value, Map, Number};
+use crate::{Error, Result};
+use serde_json::{Value, Map};
 
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub enum ValueType {
@@ -11,17 +12,19 @@ pub enum ValueType {
     Object,
 }
 
-impl ValueType {
-    fn describe(&self) -> String {
+impl std::fmt::Display for ValueType {
+
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ValueType::Null => "the null constant".to_string(),
-            ValueType::Bool => "a boolean".to_string(),
-            ValueType::Number => "a number".to_string(),
-            ValueType::String => "a string".to_string(),
-            ValueType::Array => "an array".to_string(),
-            ValueType::Object => "an object".to_string(),
+            ValueType::Null => write!(f, "the null constant"),
+            ValueType::Bool => write!(f, "a boolean"),
+            ValueType::Number => write!(f, "a number"),
+            ValueType::String => write!(f, "a string"),
+            ValueType::Array => write!(f, "an array"),
+            ValueType::Object => write!(f, "an object"),
         }
     }
+
 }
 
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
@@ -32,32 +35,17 @@ pub enum NumberType {
     Float,
 }
 
-#[derive(Debug)]
-pub enum Error {
-    IndexOutOfBounds(usize),
-    KeyMissing(String),
-    WrongType(Value, ValueType),
-    WrongNumberType(Number, NumberType),
-}
+impl std::fmt::Display for NumberType {
 
-impl std::error::Error for Error {}
-
-type Result<T> = std::result::Result<T, Error>;
-
-impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::KeyMissing(key) => write!(f, "key '{}' is missing", key),
-            Self::WrongType(_value, expected) => write!(f, "expected {}", expected.describe()),
-            Self::WrongNumberType(_value, expected) => write!(f, "expected {}", match expected {
-                NumberType::U64 => "an unsigned 64-bit integer",
-                NumberType::I64 => "a signed 64-bit integer",
-                NumberType::U32 => "an unsigned 32-bit integer",
-                NumberType::Float => "a floating point number",
-            }),
-            Self::IndexOutOfBounds(index) => write!(f, "index {} is out of bounds", index),
-        }
+                NumberType::U64 => write!(f, "an unsigned 64-bit integer"),
+                NumberType::I64 => write!(f, "a signed 64-bit integer"),
+                NumberType::U32 => write!(f, "an unsigned 32-bit integer"),
+                NumberType::Float => write!(f, "a floating point number"),
+            }
     }
+
 }
 
 pub trait IndexExt {
@@ -104,7 +92,9 @@ where
 pub trait ValueExt {
     fn get_ok<I: IndexExt>(&self, index: I) -> Result<&Value>;
     fn as_object_ok(&self) -> Result<&Map<String, Value>>;
+    fn as_object_mut_ok(&mut self) -> Result<&mut Map<String, Value>>;
     fn as_array_ok(&self) -> Result<&Vec<Value>>;
+    fn as_array_mut_ok(&mut self) -> Result<&mut Vec<Value>>;
     fn as_str_ok(&self) -> Result<&str>;
     fn as_bool_ok(&self) -> Result<bool>;
     fn as_null_ok(&self) -> Result<()>;
@@ -127,12 +117,27 @@ impl ValueExt for serde_json::Value {
         }
     }
 
+    fn as_object_mut_ok(&mut self) -> Result<&mut Map<String, Value>> {
+        match self {
+            Value::Object(map) => Ok(map),
+            _ => Err(Error::WrongType(self.clone(), ValueType::Object)),
+        }
+    }
+
     fn as_array_ok(&self) -> Result<&Vec<Value>> {
         match self {
             Value::Array(vec) => Ok(vec),
             _ => Err(Error::WrongType(self.clone(), ValueType::Array)),
         }
     }
+
+    fn as_array_mut_ok(&mut self) -> Result<&mut Vec<Value>> {
+        match self {
+            Value::Array(vec) => Ok(vec),
+            _ => Err(Error::WrongType(self.clone(), ValueType::Array)),
+        }
+    }
+
 
     fn as_str_ok(&self) -> Result<&str> {
         match self {

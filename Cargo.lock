@@ -447,9 +447,9 @@ checksum = "9a3a5bfb195931eeb336b2a7b4d761daec841b97f947d34394601737a7bba5e4"
 
 [[package]]
 name = "hyper"
-version = "1.4.1"
+version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "50dfd22e0e76d0f662d429a5f80fcaf3855009297eab6a0a9f8543834744ba05"
+checksum = "bbbff0a806a4728c99295b254c8838933b5b082d75e3cb70c8dab21fdfbcfa9a"
 dependencies = [
  "bytes",
  "futures-channel",
@@ -675,6 +675,7 @@ name = "openprovider"
 version = "0.1.0"
 dependencies = [
  "log",
+ "registrar-common",
  "reqwest",
  "serde",
  "serde_json",
@@ -876,6 +877,19 @@ name = "regex-syntax"
 version = "0.8.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2b15c43186be67a4fd63bee50d0303afffcef381492ebe2c5d87f324e1b8815c"
+
+[[package]]
+name = "registrar-common"
+version = "0.1.0"
+dependencies = [
+ "http",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
+ "log",
+ "serde_json",
+ "tokio",
+]
 
 [[package]]
 name = "reqwest"

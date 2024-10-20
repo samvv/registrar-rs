@@ -9,96 +9,12 @@
 //! yet to be implemented. You are invited to try out the API and contribute to the project [back
 //! on GitHub](https://github.com/samvv/openprovider-rs).
 
-#[doc(hidden)]
-pub mod json;
-
-#[cfg_attr(feature = "io_error_more", feature("io_error_more"))]
-
-#[doc(hidden)]
-pub mod io_result_ext;
-
+use registrar_common::{Error, Result, ValueExt};
 use reqwest::Method;
 use serde::{Serialize, Deserialize};
-use serde_json::{Value, json, error::Category};
-use json::ValueExt;
+use serde_json::{Value, json};
 
 const DEFAULT_MAX_RETRIES: u32 = 5;
-
-#[derive(Debug)]
-pub enum Error {
-    /// Indicates that authentication with the OpenProvider API failed, either because of an
-    /// invalid username/password combination or a token that expired.
-    AuthenticationFailed,
-    /// There was some communication with the OpenProvider API but it returned an error code that is
-    /// not understood by this library. The code and the message are saved inside the tuple
-    /// elements.
-    UnknownRemoteError(u64, String),
-    /// Any kind of IO error.
-    ///
-    /// Currently, errors in the network communication are stored in [`Other`](Self::Other) instead of this field.
-    /// This is due to an incompatibility with the underlying HTTP library and will be fixed in the
-    /// future.
-    Io(std::io::Error),
-    /// Data sent or received from OpenProvider did not meet the schema of this library.
-    Json(String),
-    /// Any other error stored as a human-readable error message.
-    Other(String),
-}
-
-impl std::fmt::Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::AuthenticationFailed => write!(f, "OpenProvider did not accept the current authentication"),
-            Self::UnknownRemoteError(code, desc) => write!(f, "OpenProvider returned with error {}: {}", code, desc),
-            Self::Io(error) => write!(f, "input/output error: {}", error),
-            Self::Json(message) => f.write_str(message),
-            Self::Other(message) => f.write_str(message),
-        }
-    }
-}
-
-impl std::error::Error for Error {}
-
-impl From<serde_json::Error> for Error {
-    fn from(error: serde_json::Error) -> Self {
-        match error.classify() {
-            Category::Io => Error::Io(error.into()),
-            Category::Eof | Category::Data | Category::Syntax => Error::Json(error.to_string()),
-        }
-    }
-}
-
-impl From<json::Error> for Error {
-    fn from(error: json::Error) -> Self {
-        Error::Json(error.to_string())
-    }
-}
-
-impl From<reqwest::Error> for Error {
-    fn from(error: reqwest::Error) -> Self {
-        Error::Other(error.to_string())
-    }
-}
-
-/// Represents the category of all computations that may fail in this library.
-///
-/// ```no_run
-/// use openprovider::Error;
-///
-/// let mut client = openprovider::Client::default();
-///
-/// loop {
-///     match client.get_zone("example.com").await {
-///         Ok(info) => break info,
-///         Err(Error::AuthenticationFailed) => {
-///             let token = client.login("bob", "123456789").await?;
-///             client.set_token(token);
-///         },
-///         Err(error) => panic!("Failed to fetch DNS zone info: {}", error),
-///     }
-/// }
-/// ```
-pub type Result<T> = std::result::Result<T, Error>;
 
 struct Config {
     token: Option<String>,
@@ -226,10 +142,10 @@ pub struct Zone {
     pub ty: String,
 }
 
-const CODE_SUCCESS: u64 = 0;
+const CODE_SUCCESS: u32 = 0;
 
 /// The error code the OpenProvider API returns whenever there is an authentication failure.
-const CODE_AUTH_FAILED: u64 = 196;
+const CODE_AUTH_FAILED: u32 = 196;
 
 /// Communiates with the OpenProvider.nl API.
 ///
@@ -326,14 +242,17 @@ impl Client {
             .json().await?;
         let code = response
             .get_ok("code")?
-            .as_u64_ok()?;
+            .as_u32_ok()?;
         if code == CODE_SUCCESS {
             let data = response.get_ok("data")?;
             return Ok(data.clone())
         }
         match code {
             CODE_AUTH_FAILED => Err(Error::AuthenticationFailed),
-            _ => Err(Error::UnknownRemoteError(code, response.get_ok("desc")?.to_string())),
+            _ => Err(Error::Api {
+                code: Some(code),
+                message: response.get_ok("desc")?.to_string()
+            }),
         }
     }
 

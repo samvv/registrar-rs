@@ -1,6 +1,8 @@
 [workspace]
 members = [
   "crates/openprovider",
-  "crates/openprovider-cli"
-, "crates/porkbun"]
+  "crates/openprovider-cli",
+  "crates/porkbun",
+  "crates/registrar-common"
+]
 resolver = "2"

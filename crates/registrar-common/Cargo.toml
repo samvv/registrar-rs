@@ -1,0 +1,16 @@
+[package]
+name = "registrar-common"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+io_error_more = []
+
+[dependencies]
+http = "1.1.0"
+http-body-util = "0.1.2"
+hyper = { version = "1.5.0", features = ["client", "http1"] }
+hyper-util = { version = "0.1.9", features = ["http1", "tokio"] }
+log = "0.4.22"
+serde_json = "1.0.132"
+tokio = "1.40.0"

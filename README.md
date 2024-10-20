@@ -13,7 +13,7 @@ Some cool things you can do with this library:
  - Build and run a custom **dynamic DNS** client, such as [dnsmaster].
  - Create a CLI tool to manage your domains
 
-> [WARNING]
+> [!WARNING]
 >
 > Not everything has yet been implementaed in these libraries. You are invited
 > to file bugs or create a pull request.

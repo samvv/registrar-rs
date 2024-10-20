@@ -1,18 +1,21 @@
-OpenProvider.nl in Rust
-=======================
+Registrar Clients in Rust
+=========================
 
-[![tests](https://github.com/samvv/openprovider-rs/actions/workflows/rust.yml/badge.svg)](https://github.com/samvv/openprovider-rs/actions/workflows/rust.yml)
+[![tests](https://github.com/samvv/registrar-rs/actions/workflows/rust.yml/badge.svg)](https://github.com/samvv/registrar-rs/actions/workflows/rust.yml)
 
-This is an implementation of a spec-compliant HTTP-based API client for the
-OpenProvider.nl domain reseller.
+This repository contains clients for different registrars. Using these
+libraries, you can query and manipulate your domains as if they are part of one
+big domain pool.
 
-**⚠️ Right now only a small subset of the OpenProvider API is supported, but 
-with most groundwork being done it should be easy to integrate whatever
-endpoint you need.**
+Some cool things you can do with this library:
 
-## License
+ - Build a web interface so that all your domains are manage in one place
+ - Build and run a custom **dynamic DNS** client, such as [dnsmaster].
+ - Create a CLI tool to manage your domains
 
-This piece of software is licensed under the MIT licence.
+> [WARNING]
+>
+> Not everything has yet been implementaed in these libraries. You are invited
+> to file bugs or create a pull request.
 
-Buying the author a coffee is always much appreciated.
-
+[dnsmaster]: https://github.com/samvv/dnsmaster
